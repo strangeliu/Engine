@@ -85,11 +85,25 @@ public struct ViewUpdateOverlayModifier<Overlay: View>: ViewModifier {
                 .onAppear {
                     lastPhase = phase
                 }
-                .onChange(of: phase) { newValue in
+                #if os(visionOS)
+                .onChange(of: phase) { _, newValue in
                     withCATransaction {
                         lastPhase = newValue
                     }
                 }
+                #else
+                .onChange(of: phase) { newValue in
+                    #if os(watchOS)
+                    RunLoop.main.schedule {
+                        lastPhase = newValue
+                    }
+                    #else
+                    withCATransaction {
+                        lastPhase = newValue
+                    }
+                    #endif
+                }
+                #endif
             )
     }
 }
@@ -97,7 +111,7 @@ public struct ViewUpdateOverlayModifier<Overlay: View>: ViewModifier {
 // MARK: - Previews
 
 @available(iOS 14.0, macOS 11.0, tvOS 14.0, watchOS 7.0, *)
-struct ViewUpdateModifier_Previews: PreviewProvider {
+struct ViewUpdateDebugView_Previews: PreviewProvider {
     static var previews: some View {
         Preview()
     }
@@ -133,9 +147,15 @@ struct ViewUpdateModifier_Previews: PreviewProvider {
             var value: Int
             var body: some View {
                 Text("Receives Updates")
+                    #if os(visionOS)
+                    .onChange(of: value) { _, _ in
+                        // Do nothing, but view needs to use value somehow
+                    }
+                    #else
                     .onChange(of: value) { _ in
                         // Do nothing, but view needs to use value somehow
                     }
+                    #endif
                     .withViewUpdateDebugView()
             }
         }

@@ -13,7 +13,7 @@ A performance driven framework for developing SwiftUI frameworks and apps. `Engi
 ## Requirements
 
 - Deployment target: iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0 or visionOS 1.0
-- Xcode 15+
+- Xcode 16.4+
 
 ## Installation
 
@@ -49,6 +49,10 @@ let package = Package(
 ### Xcode Cloud / Github Actions / Fastlane / CI
 
 `EngineMacros` includes a Swift macro, which requires user validation to enable or the build will fail. When configuring your CI, pass the flag `-skipMacroValidation` to `xcodebuild` to fix this.
+
+## Documentation
+
+Detailed documentation is available [here](https://swiftpackageindex.com/nathantannar4/Engine/main/documentation/engine).
 
 ## Introduction to Engine
 

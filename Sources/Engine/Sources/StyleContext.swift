@@ -73,10 +73,12 @@ extension StyleContext where Self == ScrollViewStyleContext {
 
 /// The style context of a `List`
 public struct ListStyleContext: StyleContext {
-    public static let aliases: [any StyleContext.Type] = [
-        InsetGroupedListStyleContext.self,
-        FormStyleContext.self
-    ]
+    public static var aliases: [any StyleContext.Type] {
+        [
+            InsetGroupedListStyleContext.self,
+            FormStyleContext.self,
+        ]
+    }
 }
 extension StyleContext where Self == ListStyleContext {
     public static var list: ListStyleContext { .init() }
@@ -90,10 +92,12 @@ extension StyleContext where Self == InsetGroupedListStyleContext {
 
 /// The style context of a `Form`
 public struct FormStyleContext: StyleContext {
-    public static let aliases: [any StyleContext.Type] = [
-        GroupedFormStyleContext.self,
-        ColumnsFormStyleContext.self
-    ]
+    public static var aliases: [any StyleContext.Type] {
+        [
+            GroupedFormStyleContext.self,
+            ColumnsFormStyleContext.self,
+        ]
+    }
 }
 extension StyleContext where Self == FormStyleContext {
     public static var form: FormStyleContext { .init() }
@@ -128,9 +132,11 @@ extension StyleContext where Self == SidebarStyleContext {
 
 /// The style context of a `NavigationView`/`NavigationSplitView`
 public struct NavigationViewStyleContext: StyleContext {
-    public static let aliases: [any StyleContext.Type] = [
-        SidebarStyleContext.self
-    ]
+    public static var aliases: [any StyleContext.Type] {
+        [
+            SidebarStyleContext.self,
+        ]
+    }
 }
 extension StyleContext where Self == NavigationViewStyleContext {
     public static var navigationView: NavigationViewStyleContext { .init() }
@@ -229,12 +235,14 @@ public struct StyleContextModifier<
 }
 
 private struct StyleContextInput: ViewInputKey {
-    static var defaultValue: StyleContext.Type { NoStyleContext.self }
+    static let defaultValue: StyleContextInputLayout = StyleContextInputLayout(metadata: (NoStyleContext.self, 0))
 }
 
 private struct StyleContextInputValue<Context: StyleContext>: ViewInput {
     typealias Key = StyleContextInput
-    static var value: Key.Value { Context.self }
+    static var value: Key.Value {
+        StyleContextInputLayout(metadata: (Context.self, 0))
+    }
 }
 
 @frozen
@@ -277,5 +285,34 @@ public struct _StyleContextLogModifier: ViewInputsModifier {
             """
         os_log(.debug, "%@", log)
         #endif
+    }
+}
+
+// MARK: - Previews
+
+struct PreviewStyleContext: StyleContext { }
+
+struct StyleContext_Previews: PreviewProvider {
+    static var previews: some View {
+        VStack {
+            PreviewCustomView {
+                Text("Hello, World")
+            }
+            .styledViewStyle(
+                PreviewCustomViewBody.self,
+                style: BorderedPreviewCustomViewStyle(),
+                predicate: PreviewStyleContext()
+            )
+
+            PreviewCustomView {
+                Text("Hello, World")
+            }
+            .styledViewStyle(
+                PreviewCustomViewBody.self,
+                style: BorderedPreviewCustomViewStyle(),
+                predicate: PreviewStyleContext()
+            )
+            .styleContext(PreviewStyleContext())
+        }
     }
 }

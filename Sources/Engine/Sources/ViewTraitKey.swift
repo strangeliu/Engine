@@ -23,14 +23,14 @@ public protocol ViewTraitKey {
 public struct ZIndexTrait: ViewTraitKey {
     public typealias Value = Double
     public static let conformance = ViewTraitKeyProtocolDescriptor.conformance(
-        of: "s7SwiftUI14ZIndexTraitKeyV"
+        of: "7SwiftUI14ZIndexTraitKeyV"
     )
 }
 
 public struct LayoutPriorityTrait: ViewTraitKey {
     public typealias Value = Double
     public static let conformance = ViewTraitKeyProtocolDescriptor.conformance(
-        of: "s7SwiftUI22LayoutPriorityTraitKeyV"
+        of: "7SwiftUI22LayoutPriorityTraitKeyV"
     )
 }
 
@@ -43,7 +43,7 @@ public struct TagValueTrait<V>: ViewTraitKey {
     public static var conformance: ProtocolConformance<ViewTraitKeyProtocolDescriptor>? {
         guard let typeName = _mangledTypeName(V.self) else { return nil }
         return ViewTraitKeyProtocolDescriptor.conformance(
-            of: "s7SwiftUI16TagValueTraitKeyVy\(typeName)G"
+            of: "7SwiftUI16TagValueTraitKeyVy\(typeName)G"
         )
     }
 }
@@ -51,14 +51,14 @@ public struct TagValueTrait<V>: ViewTraitKey {
 public struct IsSectionHeaderTrait: ViewTraitKey {
     public typealias Value = Bool
     public static let conformance = ViewTraitKeyProtocolDescriptor.conformance(
-        of: "s7SwiftUI23IsSectionHeaderTraitKeyV"
+        of: "7SwiftUI23IsSectionHeaderTraitKeyV"
     )
 }
 
 public struct IsSectionFooterTrait: ViewTraitKey {
     public typealias Value = Bool
     public static let conformance = ViewTraitKeyProtocolDescriptor.conformance(
-        of: "s7SwiftUI23IsSectionFooterTraitKeyV"
+        of: "7SwiftUI23IsSectionFooterTraitKeyV"
     )
 }
 
@@ -81,10 +81,13 @@ extension AnyVariadicView.Subview {
         var output: K.Value!
 
         mutating func visit<Key: _ViewTraitKey>(type: Key.Type) {
+            let value = subview.element[Key.self]
             if K.Value.self == Key.Value.self {
-                output = subview.element[Key.self] as? K.Value
+                output = value as? K.Value
+            } else if K.Value.self == Any.self {
+                output = (value as Any) as? K.Value
             } else if MemoryLayout<K.Value>.size == MemoryLayout<Key.Value>.size {
-                output = unsafeBitCast(subview.element[Key.self], to: K.Value.self)
+                output = unsafeBitCast(value, to: K.Value.self)
             }
         }
     }
@@ -123,10 +126,13 @@ extension Layout.Subviews.Element {
         var output: K.Value!
 
         mutating func visit<Key: _ViewTraitKey>(type: Key.Type) {
+            let trait = subview._trait(key: Key.self)
             if K.Value.self == Key.Value.self {
-                output = subview._trait(key: Key.self) as? K.Value
+                output = trait as? K.Value
+            } else if K.Value.self == Any.self {
+                output = (trait as Any) as? K.Value
             } else if MemoryLayout<K.Value>.size == MemoryLayout<Key.Value>.size {
-                output = unsafeBitCast(subview._trait(key: Key.self), to: K.Value.self)
+                output = unsafeBitCast(trait, to: K.Value.self)
             }
         }
     }
@@ -179,8 +185,8 @@ public struct ViewTraitWritingModifier<Trait: ViewTraitKey>: ViewModifier {
     }
 
     private struct BodyModifier: PrimitiveView {
-        var content: Content
-        var value: Trait.Value
+        nonisolated(unsafe) var content: Content
+        nonisolated(unsafe) var value: Trait.Value
 
         private struct TraitVisitor: ViewTraitKeyVisitor {
             var content: Content
@@ -200,7 +206,7 @@ public struct ViewTraitWritingModifier<Trait: ViewTraitKey>: ViewModifier {
             }
         }
 
-        private var modifiedContent: Any {
+        private nonisolated var modifiedContent: Any {
             let conformance = Trait.conformance!
             var visitor = TraitVisitor(
                 content: content,
@@ -210,7 +216,7 @@ public struct ViewTraitWritingModifier<Trait: ViewTraitKey>: ViewModifier {
             return visitor.output!
         }
 
-        static func makeView(
+        nonisolated static func makeView(
             view: _GraphValue<Self>,
             inputs: _ViewInputs
         ) -> _ViewOutputs {
@@ -223,7 +229,7 @@ public struct ViewTraitWritingModifier<Trait: ViewTraitKey>: ViewModifier {
             return visitor.outputs
         }
 
-        static func makeViewList(
+        nonisolated static func makeViewList(
             view: _GraphValue<Self>,
             inputs: _ViewListInputs
         ) -> _ViewListOutputs {
@@ -237,7 +243,7 @@ public struct ViewTraitWritingModifier<Trait: ViewTraitKey>: ViewModifier {
         }
 
         @available(iOS 14.0, macOS 11.0, tvOS 14.0, watchOS 7.0, *)
-        static func viewListCount(
+        nonisolated static func viewListCount(
             inputs: _ViewListCountInputs
         ) -> Int? {
             let conformance = Trait.conformance!

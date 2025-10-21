@@ -13,10 +13,10 @@ public struct ViewInputConditionalContent<
 >: PrimitiveView {
 
     @usableFromInline
-    var trueContent: TrueContent
+    nonisolated(unsafe) var trueContent: TrueContent
 
     @usableFromInline
-    var falseContent: FalseContent
+    nonisolated(unsafe) var falseContent: FalseContent
 
     @inlinable
     public init(
@@ -42,16 +42,16 @@ public struct ViewInputConditionalContent<
         view: _GraphValue<Self>,
         inputs: _ViewInputs
     ) -> _ViewOutputs {
-        Condition.evaluate(ViewInputs(inputs: inputs._graphInputs))
+        Condition.evaluate(ViewInputs(inputs: inputs))
             ? TrueContent._makeView(view: view[\.trueContent], inputs: inputs)
             : FalseContent._makeView(view: view[\.falseContent], inputs: inputs)
     }
 
-    public static func makeViewList(
+    public nonisolated static func makeViewList(
         view: _GraphValue<Self>,
         inputs: _ViewListInputs
     ) -> _ViewListOutputs {
-        Condition.evaluate(ViewInputs(inputs: inputs._graphInputs))
+        Condition.evaluate(ViewInputs(inputs: inputs))
             ? TrueContent._makeViewList(view: view[\.trueContent], inputs: inputs)
             : FalseContent._makeViewList(view: view[\.falseContent], inputs: inputs)
     }
@@ -60,7 +60,7 @@ public struct ViewInputConditionalContent<
     public static func viewListCount(
         inputs: _ViewListCountInputs
     ) -> Int? {
-        Condition.evaluate(ViewInputs(inputs: inputs._graphInputs))
+        Condition.evaluate(ViewInputs(inputs: inputs))
             ? TrueContent._viewListCount(inputs: inputs)
             : FalseContent._viewListCount(inputs: inputs)
     }
@@ -87,14 +87,33 @@ extension ViewInputConditionalContent where FalseContent == EmptyView {
 struct ViewInputConditionalContent_Previews: PreviewProvider {
     struct PreviewFlag: ViewInputFlag { }
 
+    struct Preview: View {
+        var label: String
+        @State var value = 0
+
+        var body: some View {
+            Button {
+                value += 1
+            } label: {
+                Text(verbatim: "\(label) \(value.description)")
+            }
+        }
+    }
+
     static var previews: some View {
         VStack {
             ViewInputConditionalContent(PreviewFlag.self) {
-                Text("TRUE")
+                Preview(label: "TRUE")
             } otherwise: {
-                Text("FALSE")
+                Preview(label: "FALSE")
             }
             .input(PreviewFlag.self)
+
+            ViewInputConditionalContent(PreviewFlag.self) {
+                Preview(label: "TRUE")
+            } otherwise: {
+                Preview(label: "FALSE")
+            }
         }
     }
 }

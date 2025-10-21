@@ -15,35 +15,67 @@ public struct ForEachSubview<
     var source: Array<Subview>
 
     @usableFromInline
-    var subview: (Int, Subview) -> Content
+    var content: (Int, Subview) -> Content
 
     public init<Source: View>(
         _ source: VariadicView<Source>,
-        @ViewBuilder subview: @escaping (Int, Subview) -> Content
+        @ViewBuilder content: @escaping (Int, Subview) -> Content
     ) where Subview == AnyVariadicView.Subview {
-        self.init(source.children.map { $0 }, subview: subview)
+        self.init(source.children.map { $0 }, content: content)
     }
 
     public init(
         _ source: [AnyVariadicView.Subview],
-        @ViewBuilder subview: @escaping (Int, Subview) -> Content
+        @ViewBuilder content: @escaping (Int, Subview) -> Content
     ) where Subview == AnyVariadicView.Subview {
         self.source = source
-        self.subview = subview
+        self.content = content
     }
 
     public init(
         _ source: [MultiViewSubviewVisitor.Subview],
-        @ViewBuilder subview: @escaping (Int, Subview) -> Content
+        @ViewBuilder content: @escaping (Int, Subview) -> Content
     ) where Subview == MultiViewSubviewVisitor.Subview {
         self.source = source
-        self.subview = subview
+        self.content = content
+    }
+
+    @_disfavoredOverload
+    public init<Source: View>(
+        _ source: Source,
+        @ViewBuilder content: @escaping (Int, Subview) -> Content
+    ) where Subview == MultiViewSubviewVisitor.Subview {
+        var visitor = MultiViewSubviewVisitor()
+        source.visit(visitor: &visitor)
+        self.init(visitor.subviews, content: content)
     }
 
     public var body: some View {
         let subviews = Array(zip(source.indices, source))
         ForEach(subviews, id: \.1.id) { index, element in
-            subview(index, element)
+            content(index, element)
+        }
+    }
+}
+
+// MARK: - Previews
+
+struct ForEachSubview_Previews: PreviewProvider {
+
+    struct TextViews: View {
+        var body: some View {
+            Text("Line 1")
+            Text("Line 2")
+            Text("Line 3")
+        }
+    }
+
+    static var previews: some View {
+        VStack {
+            ForEachSubview(TextViews()) { index, subview in
+                subview
+                    .border(Color.red)
+            }
         }
     }
 }

@@ -35,7 +35,7 @@ extension ViewOutputKey where Value == ViewOutputList<Content> {
 /// A list of views sourced by a ``ViewOutputKey``
 @frozen
 @available(iOS 14.0, macOS 11.0, tvOS 14.0, watchOS 7.0, *)
-public struct ViewOutputList<Content: View>: View, RandomAccessCollection {
+public struct ViewOutputList<Content: View>: View, RandomAccessCollection, Sequence {
 
     @frozen
     public struct Subview: View, Identifiable {
@@ -44,7 +44,7 @@ public struct ViewOutputList<Content: View>: View, RandomAccessCollection {
             var value: Namespace.ID
         }
 
-        public var id: ID
+        public nonisolated(unsafe) var id: ID
         public var content: Content
 
         var phase: UpdatePhase.Value
@@ -72,29 +72,36 @@ public struct ViewOutputList<Content: View>: View, RandomAccessCollection {
         }
     }
 
-    // MARK: Collection
+    // MARK: Sequence
 
-    public typealias Element = Subview
     public typealias Iterator = IndexingIterator<Array<Element>>
-    public typealias Index = Int
 
-    public func makeIterator() -> Iterator {
+    public nonisolated func makeIterator() -> Iterator {
         elements.makeIterator()
     }
 
-    public var startIndex: Index {
+    public nonisolated var underestimatedCount: Int {
+        elements.underestimatedCount
+    }
+
+    // MARK: RandomAccessCollection
+
+    public typealias Element = Subview
+    public typealias Index = Int
+
+    public nonisolated var startIndex: Index {
         elements.startIndex
     }
 
-    public var endIndex: Index {
+    public nonisolated var endIndex: Index {
         elements.endIndex
     }
 
-    public subscript(position: Index) -> Element {
+    public nonisolated subscript(position: Index) -> Element {
         elements[position]
     }
 
-    public func index(after index: Index) -> Index {
+    public nonisolated func index(after index: Index) -> Index {
         elements.index(after: index)
     }
 }
@@ -243,6 +250,7 @@ public struct ViewOutputKeyReader<
         PreferenceKeyReader(ViewOutputPreferenceKey<Key>.self) { value in
             content(Value(value: value))
         }
+        .preference(key: ViewOutputPreferenceKey<Key>.self, value: .init())
     }
 }
 
@@ -294,20 +302,32 @@ struct ViewOutputKey_Previews: PreviewProvider {
         var body: some View {
             ViewOutputKeyReader(PreviewViewOutputKey.self) { value in
                 VStack {
-                    ViewOutputKeyValueReader(value) { views in
-                        ForEach(views) { view in
-                            view
+                    VStack {
+                        ViewOutputKeyValueReader(value) { views in
+                            ForEach(views) { view in
+                                view
+                            }
                         }
                     }
-                }
-                .viewOutput(PreviewViewOutputKey.self) {
-                    Text("Hello, World")
-                }
-                .viewOutput(PreviewViewOutputKey.self) {
-                    Button {
-                        counter += 1
-                    } label: {
-                        Text(counter.description)
+
+                    ViewOutputKeyReader(PreviewViewOutputKey.self) { value in
+                        VStack {
+                            ViewOutputKeyValueReader(value) { views in
+                                ForEach(views) { view in
+                                    view
+                                }
+                            }
+                        }
+                        .viewOutput(PreviewViewOutputKey.self) {
+                            Text("Hello, World")
+                        }
+                        .viewOutput(PreviewViewOutputKey.self) {
+                            Button {
+                                counter += 1
+                            } label: {
+                                Text(counter.description)
+                            }
+                        }
                     }
                 }
             }

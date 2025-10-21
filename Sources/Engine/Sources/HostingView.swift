@@ -57,7 +57,7 @@ open class HostingView<
     public var disablesSafeArea: Bool = false {
         didSet {
             guard oldValue != disablesSafeArea else { return }
-            #if os(iOS) || os(tvOS)
+            #if os(iOS) || os(tvOS) || os(visionOS)
             setNeedsLayout()
             #elseif os(macOS)
             needsLayout = true
@@ -65,7 +65,7 @@ open class HostingView<
         }
     }
 
-    #if os(iOS) || os(tvOS)
+    #if os(iOS) || os(tvOS) || os(visionOS)
     @available(iOS 16.0, tvOS 16.0, *)
     public var allowUIKitAnimations: Int32 {
         get {
@@ -85,7 +85,11 @@ open class HostingView<
             return result ?? false
         }
         set {
-            try? swift_setFieldValue("allowUIKitAnimationsForNextUpdate", newValue, self)
+            if #available(iOS 18.1, tvOS 18.1, *) {
+                allowUIKitAnimations += 1
+            } else {
+                try? swift_setFieldValue("allowUIKitAnimationsForNextUpdate", newValue, self)
+            }
         }
     }
 
@@ -96,6 +100,14 @@ open class HostingView<
     }
     private var shouldAutomaticallyAllowUIKitAnimationsForNextUpdate: Bool = true
     #endif
+
+    public var isHitTestingPassthrough: Bool = {
+        if #available(iOS 26.0, *) {
+            // iOS 26 changes hit testing making passthrough less reliable
+            return false
+        }
+        return true
+    }()
 
     #if os(macOS)
     @available(macOS 11.0, *)
@@ -133,7 +145,7 @@ open class HostingView<
         fatalError("init(rootView:) has not been implemented")
     }
 
-    #if os(iOS) || os(tvOS)
+    #if os(iOS) || os(tvOS) || os(visionOS)
     open override func layoutSubviews() {
         if #available(iOS 16.0, tvOS 16.0, *), shouldAutomaticallyAllowUIKitAnimationsForNextUpdate, 
             UIView.inheritedAnimationDuration > 0 || layer.animationKeys()?.isEmpty == false
@@ -150,23 +162,77 @@ open class HostingView<
 
     #if os(macOS)
     open override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let result = super.hitTest(point), result != self else {
+        let result = super.hitTest(point)
+        if result == self, isHitTestingPassthrough {
             return nil
         }
         return result
     }
     #else
-    private var hitTestTimestamp: TimeInterval = 0
+    struct HitTestEvent {
+        var point: CGPoint
+        var timestamp: TimeInterval
+    }
+    private var lastHitTestEvent: HitTestEvent?
     open override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let result = super.hitTest(point, with: event)
-        if #available(iOS 18.0, tvOS 18.0, visionOS 2.0, *) {
-            defer { hitTestTimestamp = event?.timestamp ?? 0 }
-            if result == self, event?.timestamp != hitTestTimestamp {
+        if #available(iOS 26.0, *) {
+            if result == self, isHitTestingPassthrough {
+                // Hit testing on iOS 26 always returns self, so check the raw pixels to support passthrough
+                let size = CGSize(width: 10, height: 10)
+                UIGraphicsBeginImageContextWithOptions(size, false, window?.screen.scale ?? 1)
+                defer { UIGraphicsEndImageContext() }
+                guard let context = UIGraphicsGetCurrentContext() else {
+                    return result
+                }
+
+                context.translateBy(x: -point.x + size.width / 2, y: -point.y + size.height / 2)
+                layer.render(in: context)
+
+                let image = UIGraphicsGetImageFromCurrentImageContext()
+                UIGraphicsEndImageContext()
+
+                guard
+                    let cgImage = image?.cgImage,
+                    let data = cgImage.dataProvider?.data,
+                    let ptr = CFDataGetBytePtr(data)
+                else {
+                    return result
+                }
+
+                let bytesPerPixel = 4
+                let width = cgImage.width
+                let height = cgImage.height
+
+                for y in 0..<height {
+                    for x in 0..<width {
+                        let offset = (y * width + x) * bytesPerPixel
+                        let alpha = ptr[offset + 3]
+                        if alpha > 0 {
+                            return result
+                        }
+                    }
+                }
+                return nil
+            }
+            return result
+        } else if #available(iOS 18.0, tvOS 18.0, visionOS 2.0, *) {
+            defer {
+                lastHitTestEvent = event.map {
+                    HitTestEvent(
+                        point: point,
+                        timestamp: $0.timestamp
+                    )
+                }
+            }
+            if result == self, isHitTestingPassthrough,
+                lastHitTestEvent?.timestamp != event?.timestamp || lastHitTestEvent?.point != point
+            {
                 return nil
             }
             return result
         } else {
-            if result == self {
+            if result == self, isHitTestingPassthrough {
                 return nil
             }
             return result

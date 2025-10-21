@@ -4,23 +4,14 @@
 
 import SwiftUI
 
+public protocol _AnyPropertyListKey {
+    static var value: Any.Type { get }
+}
+
 struct PropertyList {
     struct ElementLayout<Fields> {
         var metadata: (Any.Type, UInt)
         var fields: Fields
-
-        mutating func withUnsafeValuePointer<T, ReturnType>(
-            _ type: T.Type,
-            do body: (UnsafeMutablePointer<PropertyList.TypedElementLayout<Fields, T>>) -> ReturnType
-        ) -> ReturnType {
-            withUnsafeMutablePointer(to: &self) { ptr -> ReturnType in
-                ptr.withMemoryRebound(
-                    to: PropertyList.TypedElementLayout<Fields, T>.self,
-                    capacity: 1,
-                    body
-                )
-            }
-        }
     }
 
     struct ElementFieldsV1 {
@@ -176,16 +167,51 @@ struct PropertyList {
             }
         }
 
-        func getValue<T>(
+        var valueType: Any.Type? {
+            // Engine
+            if let keyType = keyType as? _AnyPropertyListKey.Type {
+                return keyType.value
+            }
+            // SwiftUI
+            let object = object.takeUnretainedValue()
+            let type = try? swift_getFieldType("value", object)
+            return type
+        }
+
+        var value: Any {
+            guard let valueType = valueType else {
+                return Mirror(reflecting: object.takeUnretainedValue()).descendant("value") as Any
+            }
+            func project<T>(_: T.Type) -> Any {
+                getValue(T.self)
+            }
+            return _openExistential(valueType, do: project)
+        }
+
+        func value<T>(as _: T.Type) -> T? {
+            let value = value
+            let valueType = type(of: value)
+            if T.self == valueType {
+                return value as? T
+            } else if swift_getSize(of: valueType) >= MemoryLayout<T>.size {
+                func project<Value>(_ value: Value) -> T {
+                    unsafeBitCast(value, to: T.self)
+                }
+                return _openExistential(value, do: project)
+            }
+            return nil
+        }
+
+        private func getValue<T>(
             _ type: T.Type
         ) -> T {
             switch self {
             case .v1(let ptr):
-                return ptr.pointee.withUnsafeValuePointer(T.self) { ptr in
+                return ptr.withUnsafeValuePointer(T.self, fields: ElementFieldsV1.self) { ptr in
                     return ptr.pointee.value
                 }
             case .v6(let ptr):
-                return ptr.pointee.withUnsafeValuePointer(T.self) { ptr in
+                return ptr.withUnsafeValuePointer(T.self, fields: ElementFieldsV6.self) { ptr in
                     ptr.pointee.value
                 }
             }
@@ -214,7 +240,7 @@ struct PropertyList {
         var ptr = elements
         while let p = ptr {
             if p.keyType == Input.self {
-                return p.getValue(Value.self)
+                return p.value(as: Value.self)
             }
             ptr = p.after
         }
@@ -229,7 +255,7 @@ struct PropertyList {
         while let p = ptr {
             let typeName = _typeName(p.keyType, qualified: false)
             if typeName == key {
-                return p.getValue(Value.self)
+                return p.value(as: Value.self)
             }
             ptr = p.after
         }
@@ -247,7 +273,7 @@ struct PropertyList {
             let lastValue = lastValue.assumingMemoryBound(to: ElementLayout<ElementFieldsV6>.self)
             let newValue = TypedElementLayout<ElementFieldsV6, Value>(
                 base: ElementLayout(
-                    metadata: lastValue.pointee.metadata,
+                    metadata: lastValue.pointee.metadata, // Fake a class type of the last value
                     fields: ElementFieldsV6(
                         keyType: Input.self,
                         before: nil,
@@ -268,7 +294,7 @@ struct PropertyList {
             let lastValue = lastValue.assumingMemoryBound(to: ElementLayout<ElementFieldsV1>.self)
             let newValue = TypedElementLayout<ElementFieldsV1, Value>(
                 base: ElementLayout(
-                    metadata: lastValue.pointee.metadata,
+                    metadata: lastValue.pointee.metadata, // Fake a class type of the last value
                     fields: ElementFieldsV1(
                         keyType: Input.self,
                         before: nil,
@@ -285,13 +311,62 @@ struct PropertyList {
             ptr = UnsafeMutableRawPointer(ref)
         }
     }
+
+    public subscript<Input: ViewInputKey>(
+        _ : Input.Type
+    ) -> Input.Value {
+        get {
+            value(Input.self, as: Input.Value.self) ?? Input.defaultValue
+        }
+        set {
+            add(Input.self, newValue)
+        }
+    }
+
+    @_disfavoredOverload
+    public subscript<Input: ViewInputKey>(
+        _ : Input.Type
+    ) -> Input.Value? {
+        get {
+            value(Input.self, as: Input.Value.self)
+        }
+        set {
+            add(Input.self, newValue ?? Input.defaultValue)
+        }
+    }
+
+    public subscript<Value>(
+        key: String,
+        _: Value.Type
+    ) -> Value? {
+        value(key: key, as: Value.self)
+    }
+}
+
+extension UnsafeMutablePointer {
+
+    func withUnsafeValuePointer<Fields, T, ReturnType>(
+        _ type: T.Type,
+        fields: Fields.Type,
+        do body: (UnsafeMutablePointer<PropertyList.TypedElementLayout<Fields, T>>) -> ReturnType
+    ) -> ReturnType where Pointee == PropertyList.ElementLayout<Fields> {
+        withMemoryRebound(to: PropertyList.TypedElementLayout<Fields, T>.self, capacity: 1) { p in
+            return body(&p.pointee)
+        }
+    }
 }
 
 private struct UniqueID {
-    private static var seed: Int = .max
+    private nonisolated(unsafe) static let lock: os_unfair_lock_t = {
+        let lock = os_unfair_lock_t.allocate(capacity: 1)
+        lock.initialize(to: os_unfair_lock_s())
+        return lock
+    }()
+    private nonisolated(unsafe) static var seed: Int = .max
 
     static func generate() -> Int {
         defer {
+            os_unfair_lock_lock(lock); defer { os_unfair_lock_unlock(Self.lock) }
             seed -= 1
             if seed < 0 {
                 seed = .max

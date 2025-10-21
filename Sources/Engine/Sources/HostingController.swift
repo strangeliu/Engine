@@ -22,31 +22,27 @@ open class HostingController<
         set { rootView = newValue }
     }
 
+    @available(macOS 13.3, iOS 13.0, tvOS 13.0, *)
     public var disablesSafeArea: Bool {
         get {
-            if #available(macOS 13.3, iOS 16.4, tvOS 16.4, *) {
-                return safeAreaRegions.isEmpty
-            } else {
-                #if os(iOS) || os(tvOS)
-                return _disableSafeArea
-                #else
-                return false
-                #endif
-            }
+            #if os(iOS) || os(tvOS)
+            return _disableSafeArea
+            #else
+            return safeAreaRegions.isEmpty
+            #endif
         }
         set {
-            if #available(macOS 13.3, iOS 16.4, tvOS 16.4, *) {
+            if #available(iOS 16.4, tvOS 16.4, *) {
                 safeAreaRegions = newValue ? [] : .all
-            } else {
-                #if os(iOS) || os(tvOS)
-                _disableSafeArea = newValue
-                #endif
             }
+            #if os(iOS) || os(tvOS)
+            _disableSafeArea = newValue
+            #endif
         }
     }
 
-    #if os(iOS) || os(tvOS)
-    @available(iOS 18.1, tvOS 18.1, *)
+    #if os(iOS) || os(tvOS) || os(visionOS)
+    @available(iOS 18.1, tvOS 18.1, visionOS 2.1, *)
     public var allowUIKitAnimations: Int32 {
         get {
             guard let view else { return 0 }
@@ -67,7 +63,7 @@ open class HostingController<
     @available(tvOS, introduced: 16.0, obsoleted: 18.1)
     public var allowUIKitAnimationsForNextUpdate: Bool {
         get {
-            if #available(iOS 18.1, tvOS 18.1, *) {
+            if #available(iOS 18.1, tvOS 18.1, visionOS 2.1, *) {
                 return allowUIKitAnimations > 0
             } else {
                 guard let view else { return false }
@@ -76,7 +72,7 @@ open class HostingController<
             }
         }
         set {
-            if #available(iOS 18.1, tvOS 18.1, *) {
+            if #available(iOS 18.1, tvOS 18.1, visionOS 2.1, *) {
                 allowUIKitAnimations += 1
             } else {
                 guard let view else { return }
@@ -108,15 +104,19 @@ open class HostingController<
         fatalError("init(coder:) has not been implemented")
     }
 
-    #if os(iOS) || os(tvOS)
+    #if os(iOS) || os(tvOS) || os(visionOS)
     open override func viewWillLayoutSubviews() {
         if #available(iOS 16.0, tvOS 16.0, *), shouldAutomaticallyAllowUIKitAnimationsForNextUpdate,
             UIView.inheritedAnimationDuration > 0 || view.layer.animationKeys()?.isEmpty == false
         {
-            if #available(iOS 18.1, tvOS 18.1, *) {
-                allowUIKitAnimations += 1
+            if children.count > 0 {
+                prepareForUIKitAnimations()
             } else {
-                allowUIKitAnimationsForNextUpdate = true
+                if #available(iOS 18.1, tvOS 18.1, visionOS 2.1, *) {
+                    allowUIKitAnimations += 1
+                } else {
+                    allowUIKitAnimationsForNextUpdate = true
+                }
             }
         }
         super.viewWillLayoutSubviews()
@@ -124,4 +124,30 @@ open class HostingController<
     #endif
 }
 
+#if os(iOS) || os(tvOS) || os(visionOS)
+protocol _UIHostingViewType { }
+extension _UIHostingView: _UIHostingViewType { }
+
+extension UIViewController {
+    func prepareForUIKitAnimations() {
+        guard let view else { return }
+        if view is _UIHostingViewType {
+            do {
+                if #available(iOS 18.1, tvOS 18.1, *) {
+                    var allowUIKitAnimations = try swift_getFieldValue("allowUIKitAnimations", Int32.self, view)
+                    allowUIKitAnimations += 1
+                    try swift_setFieldValue("allowUIKitAnimations", allowUIKitAnimations, view)
+                } else {
+                    try swift_setFieldValue("allowUIKitAnimationsForNextUpdate", true, view)
+                }
+            } catch {
+                print("Failed to allow UIKit animations, this is unexpected please file an issue =")
+            }
+        }
+        for child in children {
+            child.prepareForUIKitAnimations()
+        }
+    }
+}
+#endif
 #endif // !os(watchOS)

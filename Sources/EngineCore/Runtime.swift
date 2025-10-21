@@ -6,9 +6,9 @@ import Foundation
 
 @inline(__always)
 public func isOpaqueViewAnyView() -> Bool {
-    // SwiftUI v6 wraps in AnyView
     #if DEBUG && canImport(SwiftUICore)
-    return true
+    // Default build flag SWIFT_ENABLE_OPAQUE_TYPE_ERASURE via SDK check
+    return c_swift_isOpaqueTypeErasureEnabled();
     #else
     return false
     #endif
@@ -36,6 +36,10 @@ public func swift_getFields<InstanceType>(_ instance: InstanceType) -> [(field: 
         mirror = m.superclassMirror
     }
     return fields
+}
+
+public func swift_getFieldType(_ key: String, _ instance: Any) throws -> Any.Type {
+    try swift_getField(key, instance).type
 }
 
 public func swift_getFieldValue<Value, InstanceType>(_ key: String, _ value: Value.Type, _ instance: InstanceType) throws -> Value {
@@ -80,6 +84,26 @@ public func swift_getClassGenerics(for type: Any.Type) -> [Any.Type]? {
         return nil
     }
     return metadata[\.genericTypes]
+}
+
+public func swift_getIsClassType(_ type: Any.Type) -> Bool {
+    return c_swift_isClassType(type)
+}
+
+public func swift_getIsClassType(_ instance: Any) -> Bool {
+    return c_swift_isClassType(type(of: instance))
+}
+
+public func swift_getMangledTypeName(of type: Any.Type) -> String? {
+    guard let namePtr = swift_getMangledTypeName(type) else { return nil }
+    return String(cString: namePtr)
+}
+
+public func swift_getSize(of type: Any.Type) -> Int {
+    func project<T>(_: T.Type) -> Int {
+        MemoryLayout<T>.size
+    }
+    return _openExistential(type, do: project)
 }
 
 struct SwiftFieldNotFoundError: Error, CustomStringConvertible {
@@ -165,7 +189,7 @@ private func setFieldValue<Value, InstanceType>(
     }
 }
 
-private class FieldLookupCache {
+private class FieldLookupCache: @unchecked Sendable {
 
     private let lock: os_unfair_lock_t
     private var storage = [UnsafeRawPointer: [String: Field]]()
@@ -235,7 +259,7 @@ private func withUnsafeInstancePointer<InstanceType, Result>(
     _ instance: InstanceType,
     _ body: (UnsafeRawPointer) throws -> Result
 ) throws -> Result {
-    if swift_isClassType(InstanceType.self) {
+    if c_swift_isClassType(InstanceType.self) {
         return try withUnsafePointer(to: instance) {
             try $0.withMemoryRebound(to: UnsafeRawPointer.self, capacity: 1) {
                 try body($0.pointee)
@@ -253,7 +277,7 @@ private func withUnsafeMutableInstancePointer<InstanceType, Result>(
     _ instance: inout InstanceType,
     _ body: (UnsafeMutableRawPointer) throws -> Result
 ) throws -> Result {
-    if swift_isClassType(InstanceType.self) {
+    if c_swift_isClassType(InstanceType.self) {
         return try withUnsafeMutablePointer(to: &instance) {
             try $0.withMemoryRebound(to: UnsafeMutableRawPointer.self, capacity: 1) {
                 try body($0.pointee)
@@ -265,13 +289,6 @@ private func withUnsafeMutableInstancePointer<InstanceType, Result>(
             return try body(ptr)
         }
     }
-}
-
-private func swift_getSize(of type: Any.Type) -> Int {
-    func project<T>(_: T.Type) -> Int {
-        MemoryLayout<T>.size
-    }
-    return _openExistential(type, do: project)
 }
 
 private struct Field {
@@ -288,8 +305,8 @@ private struct FieldReflectionMetadata {
     let isVar: Bool = false
 }
 
-@_silgen_name("swift_isClassType")
-private func swift_isClassType(_: Any.Type) -> Bool
+@_silgen_name("c_swift_isClassType")
+private func c_swift_isClassType(_: Any.Type) -> Bool
 
 @_silgen_name("swift_reflectionMirror_recursiveCount")
 private func swift_reflectionMirror_recursiveCount(_: Any.Type) -> Int
@@ -303,3 +320,9 @@ private func swift_reflectionMirror_recursiveChildMetadata(
 
 @_silgen_name("swift_reflectionMirror_recursiveChildOffset")
 private func swift_reflectionMirror_recursiveChildOffset(_: Any.Type, index: Int) -> Int
+
+@_silgen_name("swift_getMangledTypeName")
+private func swift_getMangledTypeName(_ type: Any.Type) -> UnsafePointer<CChar>?
+
+@_silgen_name("c_swift_isOpaqueTypeErasureEnabled")
+private func c_swift_isOpaqueTypeErasureEnabled() -> Bool
